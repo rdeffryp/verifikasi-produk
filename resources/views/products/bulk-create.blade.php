@@ -84,7 +84,19 @@
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                     </div>
-
+                            <!-- Template Label -->
+<div class="mb-3">
+    <label for="label_template_id" class="form-label">
+        Template Label <span class="text-muted">(Opsional)</span>
+    </label>
+    <select name="label_template_id" id="label_template_id" class="form-select">
+        <option value="">-- Tanpa Template --</option>
+        @foreach($labelTemplates as $template)
+            <option value="{{ $template->id }}">{{ $template->nama_template }}</option>
+        @endforeach
+    </select>
+    <small class="text-muted">Template yang dipilih akan dipakai saat download label</small>
+</div>
                     <!-- Batch Prefix -->
                     <div class="mb-3">
                         <label for="batch_prefix" class="form-label">

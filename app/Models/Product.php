@@ -35,6 +35,7 @@ class Product extends Model
         'last_scan_at',
         'scan_count',
         'qr_code_path',
+        'label_template_id',
         'created_by',
     ];
 

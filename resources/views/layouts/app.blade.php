@@ -385,7 +385,12 @@
                             <i class="bi bi-qr-code-scan" style="font-size:14px;"></i> Scanner
                         </a>
                     </li>
-
+                    <li class="nav-item">
+    <a class="nav-link {{ request()->routeIs('label-templates.index') ? 'active' : '' }}"
+       href="{{ route('label-templates.index') }}">
+        <i class="bi bi-layout-text-window" style="font-size:14px;"></i> Template Label
+    </a>
+</li>
                     <li class="nav-item"><div class="nav-divider d-none d-lg-block"></div></li>
 
                     @if(Auth::guard('admin')->check())

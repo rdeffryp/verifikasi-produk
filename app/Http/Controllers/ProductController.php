@@ -79,21 +79,24 @@ class ProductController extends Controller
      * Show form bulk create (tambah banyak sekaligus)
      */
     public function bulkCreate()
-    {
-        return view('products.bulk-create');
-    }
+{
+    $labelTemplates = \DB::table('label_templates')->where('is_active', true)->get();
+    return view('products.bulk-create', compact('labelTemplates'));
+}
 
     /**
      * Generate QR Code + Digital Signature (single product)
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'nama_produk' => 'required|string|max:100',
-            'tanggal_produksi' => 'required|date',
-            'tanggal_kadaluarsa' => 'required|date|after:tanggal_produksi',
-            'batch_number' => 'nullable|string|max:50',
-        ]);
+       $validated = $request->validate([
+    'nama_produk' => 'required|string|max:100',
+    'tanggal_produksi' => 'required|date',
+    'tanggal_kadaluarsa' => 'required|date|after:tanggal_produksi',
+    'quantity' => 'required|integer|min:1|max:100',
+    'batch_prefix' => 'nullable|string|max:20',
+    'label_template_id' => 'nullable|integer|exists:label_templates,id',
+]);
 
         $productId = Product::generateProductId();
 
@@ -111,17 +114,18 @@ class ProductController extends Controller
             return back()->withErrors(['error' => 'Gagal generate signature. Cek PRIVATE_KEY di .env']);
         }
 
-        $product = Product::create([
-            'product_id' => $productId,
-            'nama_produk' => $validated['nama_produk'],
-            'tanggal_produksi' => $validated['tanggal_produksi'],
-            'tanggal_kadaluarsa' => $validated['tanggal_kadaluarsa'],
-            'batch_number' => $validated['batch_number'],
-            'hash_data' => $hashData,
-            'signature' => $signature,
-            'is_verified' => false,
-            'scan_count' => 0,
-        ]);
+       $product = Product::create([
+    'product_id' => $productId,
+    'nama_produk' => $validated['nama_produk'],
+    'tanggal_produksi' => $validated['tanggal_produksi'],
+    'tanggal_kadaluarsa' => $validated['tanggal_kadaluarsa'],
+    'batch_number' => $batchNumber,
+    'hash_data' => $hashData,
+    'signature' => $signature,
+    'is_verified' => false,
+    'scan_count' => 0,
+    'label_template_id' => $validated['label_template_id'] ?? null,
+]);
 
         $qrCodePath = $this->generateQrCode($product);
         
@@ -141,12 +145,13 @@ class ProductController extends Controller
     public function bulkStore(Request $request)
     {
         $validated = $request->validate([
-            'nama_produk' => 'required|string|max:100',
-            'tanggal_produksi' => 'required|date',
-            'tanggal_kadaluarsa' => 'required|date|after:tanggal_produksi',
-            'quantity' => 'required|integer|min:1|max:100',
-            'batch_prefix' => 'nullable|string|max:20',
-        ]);
+    'nama_produk' => 'required|string|max:100',
+    'tanggal_produksi' => 'required|date',
+    'tanggal_kadaluarsa' => 'required|date|after:tanggal_produksi',
+    'quantity' => 'required|integer|min:1|max:100',
+    'batch_prefix' => 'nullable|string|max:20',
+    'label_template_id' => 'nullable|integer|exists:label_templates,id',
+]);
 
         $quantity = $validated['quantity'];
         $batchPrefix = $validated['batch_prefix'] ?? 'BATCH';
@@ -178,16 +183,17 @@ class ProductController extends Controller
                 }
 
                 $product = Product::create([
-                    'product_id' => $productId,
-                    'nama_produk' => $validated['nama_produk'],
-                    'tanggal_produksi' => $validated['tanggal_produksi'],
-                    'tanggal_kadaluarsa' => $validated['tanggal_kadaluarsa'],
-                    'batch_number' => $batchNumber,
-                    'hash_data' => $hashData,
-                    'signature' => $signature,
-                    'is_verified' => false,
-                    'scan_count' => 0,
-                ]);
+    'product_id' => $productId,
+    'nama_produk' => $validated['nama_produk'],
+    'tanggal_produksi' => $validated['tanggal_produksi'],
+    'tanggal_kadaluarsa' => $validated['tanggal_kadaluarsa'],
+    'batch_number' => $batchNumber,
+    'hash_data' => $hashData,
+    'signature' => $signature,
+    'is_verified' => false,
+    'scan_count' => 0,
+    'label_template_id' => $validated['label_template_id'] ?? null,
+]);
 
                 $qrCodePath = $this->generateQrCode($product);
                 
@@ -315,6 +321,8 @@ class ProductController extends Controller
         if ($products->isEmpty()) {
             return back()->withErrors(['error' => 'Tidak ada produk dengan batch tersebut']);
         }
+        set_time_limit(300);
+        ini_set('memory_limit', '256M');
 
         $zipFileName = "QR_Codes_{$batchNumber}.zip";
         $zipPath = storage_path('app/' . $zipFileName);
@@ -335,7 +343,12 @@ class ProductController extends Controller
 
         $zip->close();
 
-        return response()->download($zipPath, $zipFileName)->deleteFileAfterSend(true);
+        return response()->download($zipPath, $zipFileName, [
+            'Content-Type' => 'application/zip',
+            'Content-Disposition' => 'attachment; filename="' . $zipFileName . '"',
+            'ngrok-skip-browser-warning' => 'true',
+            'X-Content-Type-Options' => 'nosniff',
+        ])->deleteFileAfterSend(true);
     }
 
     /**
@@ -388,7 +401,10 @@ class ProductController extends Controller
 
         $zip->close();
 
-        return response()->download($zipPath, $zipFileName)->deleteFileAfterSend(true);
+        return response()->download($zipPath, $zipFileName, [
+            'Content-Type' => 'application/zip',
+            'Content-Disposition' => 'attachment; filename="' . $zipFileName . '"',
+        ])->deleteFileAfterSend(true);
     }
     /**
      * Halaman verifikasi langsung dari kamera HP
@@ -746,23 +762,32 @@ $message = match(true) {
                 return null;
             }
 
-            // 2. Load template label
-            $templatePath = public_path('label-template.png');
+          // 2. Load template label — dari template yang dipilih atau default
+$templateRecord = null;
+\Log::info('label_template_id: ' . $product->label_template_id);
+if ($product->label_template_id) {
+    $templateRecord = \DB::table('label_templates')->find($product->label_template_id);
+    \Log::info('template ditemukan: ' . ($templateRecord ? $templateRecord->nama_template : 'TIDAK ADA'));
+}
 
-            if (!file_exists($templatePath)) {
-                \Log::error('Label template tidak ditemukan: ' . $templatePath);
-                return null;
-            }
+$templatePath = $templateRecord
+    ? public_path($templateRecord->file_path)
+    : public_path('label-template.png');
 
-            $template = imagecreatefrompng($templatePath);
+if (!file_exists($templatePath)) {
+    \Log::error('Label template tidak ditemukan: ' . $templatePath);
+    return null;
+}
 
-            // 3. Load QR PNG
-            $qrImage = imagecreatefrompng($qrPngPath);
+$template = imagecreatefrompng($templatePath);
 
-            // 4. Koordinat dan ukuran QR di label (sudah dikalibrasi)
-           $qrSizePx = 180;
-           $posX     = 681;
-           $posY     = 396;
+// 3. Load QR PNG
+$qrImage = imagecreatefrompng($qrPngPath);
+
+// 4. Koordinat dan ukuran QR — dari template atau default hardcode
+$qrSizePx = $templateRecord ? $templateRecord->qr_size_px : 180;
+$posX     = $templateRecord ? $templateRecord->pos_x      : 681;
+$posY     = $templateRecord ? $templateRecord->pos_y      : 396;
 
             // 5. Resize QR ke ukuran yang sesuai
             $qrResized = imagecreatetruecolor($qrSizePx, $qrSizePx);

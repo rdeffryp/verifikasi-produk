@@ -102,6 +102,15 @@ Route::prefix('admin')->middleware(\App\Http\Middleware\AdminAuth::class)->group
     // Delete semua produk
     Route::delete('/products/destroy-all', [ProductController::class, 'destroyAll'])
         ->name('products.destroy-all');
+        // Kelola Template Label
+Route::get('/label-templates', [App\Http\Controllers\LabelTemplateController::class, 'index'])
+    ->name('label-templates.index');
+
+Route::post('/label-templates', [App\Http\Controllers\LabelTemplateController::class, 'store'])
+    ->name('label-templates.store');
+
+Route::delete('/label-templates/{id}', [App\Http\Controllers\LabelTemplateController::class, 'destroy'])
+    ->name('label-templates.destroy');
 
     // Detail produk — HARUS PALING BAWAH karena {id} menangkap semua
     Route::get('/products/{id}', [ProductController::class, 'show'])
